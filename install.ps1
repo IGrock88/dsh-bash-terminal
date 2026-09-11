@@ -48,6 +48,13 @@ function Set-ApiProxyAllowlist {
     Write-Host "  apiproxy allowlist already patched."
     return
   }
+  # DSH >= 0.1.5 exposes settings through a dynamic describe() enumeration and
+  # keeps no hard-coded namespace allowlist. Refuse to rewrite the host file
+  # when the legacy pattern is absent (that rewrite would only add a BOM).
+  if ($content -notmatch '"web-search-deepseek"\r?\n\];') {
+    Write-Host "  this DSH version has no namespace allowlist; nothing to patch (expected on DSH >= 0.1.5)."
+    return
+  }
   Copy-Item $apiproxy $apiproxyBak -Force
   $replacement = @"
 "web-search-deepseek",

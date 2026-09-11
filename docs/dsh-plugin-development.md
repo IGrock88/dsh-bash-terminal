@@ -33,9 +33,18 @@
 - **Client 面**（浏览器）：`package.json` 声明 `dsh.client: { platform: "web" }` + `exports["./client"]`，源码打包成
   `window.__ModuleLoader__.load({ id, factory: (require) => ... })` 格式，host 通过
   `/plugins/<name>/client.js` 动态服务，浏览器端注入 `__DSH_BOOT__`。
-- **共享模块**（浏览器 require 可用）：`react`、`react/jsx-runtime`、`react-dom`、
-  `@deepseek-ai/cordis`、`dsh-client-runtime/client`、`dsh-client-ui-primitives`、
-  `dsh-client-ui-slots` 等 —— 打包时 **external**（`esbuild --external:@deepseek-ai/* --external:react*`）。
+- **共享模块**（浏览器 require 可用）= 壳层种子表 `PLATFORM_MODULES`。0.1.5-rc.1 的精确条目：
+  `react`、`react/jsx-runtime`、`react-dom`、`react-dom/client`、`@deepseek-ai/cordis`、
+  `@deepseek-ai/dsh-client-store`、`@deepseek-ai/dsh-client-ui-slots`、
+  `@deepseek-ai/dsh-client-ui-primitives`、`@deepseek-ai/dsh-client-ui-dockkit`
+  —— 打包时 **external**（`esbuild --external:@deepseek-ai/* --external:react*`）。
+- ⚠️ 种子表**按精确裸名命中**：`@deepseek-ai/dsh-client-store/client` 这类子路径**不会**命中
+  （`stripClientSuffix` 只对 boot graph 的动态包行生效，对种子词不生效）。旧名
+  `dsh-client-runtime` 在 0.1.5 已从种子表消失 → 运行时 `require` 直接抛
+  "missed the module table"，Web GUI 冒 "Failed to load plugins"。
+  升级 DSH 后先确认自己要的模块在种子表里怎么拼。
+- 需要**非种子**模块时，用 `dsh.client.external` 列出精确 specifier（host 会把该动态包行排到消费者之前）；
+  `dsh.client.inject` 只表达包级依赖边（组合顺序），列种子词合法且无副作用。
 
 ### 3. 依赖注入规范
 
@@ -49,12 +58,12 @@
 
 ### 1. Settings（用户配置）
 
-- 注册：`ctx.settings.register(settingsNamespace("ns"), z.object({...}), { base })`
+- 注册（0.1.5）：`ctx.settings.register("ns", z.object({...}), { base })` —— 旧的
+  `settingsNamespace("ns")` 包装函数已从 `@deepseek-ai/dsh-settings` 移除（0.1.0 时代产物）；
+  命名空间必须是「小写字母开头 + 小写字母/数字/连字符」的字符串。
 - 读取：`scope.get()`（每次 update 后更新 resolved，无需 watch）
-- ⚠️ **白名单限制**：Web 设置客户端只暴露 `dsh-host-apiproxy` 硬编码的 namespace 白名单
-  （`WEB_SETTINGS_NAMESPACES` + 模型提供商）—— 第三方 namespace 写入被 `settings-not-exposed`
-  拒绝。**workaround**：patch 该白名单（install.ps1 自动 + 备份）；治本等 DSH 上游支持
-  （官方注释承认是 deferred work）。
+- ~~白名单限制~~ **已作废**：0.1.5 的 Web 设置面走 `settings.describe()` 动态枚举已注册 namespace，
+  不再有硬编码白名单，`settings-not-exposed` 也不存在了（`install.ps1` 的白名单 patch 属历史遗留）。
 - **原生设置行**：注册 `settings.general.item` slot（通用设置区）。**UI 必须照官方
   EnterBehaviorRow 语法**（不是凭感觉）：row 布局（标题+描述左、selector 右）、
   `border-bottom: 1px solid var(--dsw-alias-border-l2)`、16px padding、
@@ -96,11 +105,13 @@
 
 ## 三、踩坑清单（血泪）
 
-1. **npm install 会清空 junction 目标**！在插件项目跑 `npm install` 时，npm 递归清理了
-   `node_modules/@deepseek-ai` junction 指向的 **profile 依赖树**（195 个包全没）。
-   恢复：profiles 是 pnpm hoisted 布局，`@deepseek-ai` 应为**真实目录 + 逐包 junction**
-   到 dsh 包（不是整目录 junction，DSH 启动会校验 symlink）。**教训：插件项目依赖用
-   junction 时，绝不在该项目跑 npm install（用 npm pack 验证产物）**。
+1. **`node_modules/@deepseek-ai` 必须是 junction（本机开发）**。DSH 的 Loader 走 Node 原生
+   解析，而插件真实路径在 profile 外面（`D:\WorkSpace\...`）：只有这个 junction 能让插件
+   和宿主**共用同一份** `@deepseek-ai/*` 模块实例；否则会落回插件自带的副本（历史上曾因此
+   停留在 0.1.0-rc.6，而宿主已经是 0.1.5）。⚠️ **npm install 会删掉这个 junction 并装一份新副本**
+   （更早还曾反过来清空 junction 指向的 profile 依赖树）——依赖用 junction 时，插件项目里
+   只跑 `npm install --package-lock-only`（只改 lock，不碰 node_modules）+ `npm pack --dry-run` 验证产物。
+   本机现状：`New-Item -ItemType Junction -Path D:\WorkSpace\projects\dsh-bash-terminal\node_modules\@deepseek-ai -Target $env:USERPROFILE\.dsh\profiles\node_modules\@deepseek-ai`。
 2. **PowerShell 5.1 `Set-Content -Encoding UTF8` 写 BOM** → DSH 的 JSON.parse 崩溃
    （`Unexpected token '﻿'`）。改 profile package.json 必须无 BOM
    （`[System.IO.File]::WriteAllText($p, $json, (New-Object System.Text.UTF8Encoding($false)))`）。
@@ -110,7 +121,8 @@
    - `wsl -e bash -i`（默认发行版）在 ConPTY 下失败（Wsl/Service/0x8007072c，RPC 句柄
      类型不匹配）→ 改用 `wsl -- bash -i` 即正常；显式 `-d <distro>` 时 `-e` 正常。
    - `AttachConsole failed` 是 node-pty 在非控制台宿主的清理钩子噪声，不影响功能。
-4. **`defineStore(decl)` 返回 `{ spec, create }`**，不是 store！真正 store（含 actions）
+4. **`defineStore(decl)` 返回 `{ spec, create }`**（0.1.5 从 `@deepseek-ai/dsh-client-store` 导入，
+   旧名 `dsh-client-runtime`），不是 store！真正 store（含 actions）
    由 `slots.register` 内部 `create()` 生成 —— 在 `inject` 回调里绑定 actions 并
    push 初始快照（theme 行模式）。
 5. **测试断言路径大小写**：CI（windows-latest）的 `SystemRoot` 是 `C:\Windows`，

@@ -48,21 +48,25 @@ powershell -ExecutionPolicy Bypass -File install.ps1 install
 $profile = "$env:USERPROFILE\.dsh\profiles\web"
 New-Item -ItemType Junction -Path "$profile\node_modules\dsh-bash-terminal" -Target "D:\WorkSpace\projects\dsh-bash-terminal" | Out-Null
 
-# 2. 让插件能解析 @deepseek-ai/* 依赖（junction 到 profile 的依赖树）
+# 2. 让插件能解析 @deepseek-ai/* 依赖（junction 到 profile 的依赖树，插件与宿主共用同一份模块实例）
 New-Item -ItemType Junction -Path "D:\WorkSpace\projects\dsh-bash-terminal\node_modules\@deepseek-ai" -Target "$profile\..\node_modules\@deepseek-ai" | Out-Null
 
 # 3. 让 profile 通过官方 bundle 挂载插件（install.ps1 install 会自动做；等价于在 dsh.profile.bundles 加 "dsh-bash-terminal"）
 # 4. （仅修改前端源码后）重新打包 client bundle:
 #    cd D:\WorkSpace\projects\dsh-bash-terminal && node scripts/build-client.mjs
-# 5. 让设置 UI 接受本插件的设置写入（DSH 限制，见下方说明）
-# 6. 重启 dsh web
+# 5. 重启 dsh web
 ```
 
-> **DSH 设置 UI 白名单限制**：DSH 的 api-gateway（dsh-host-apiproxy）对
-> Web 设置客户端暴露的 settings namespace 有**硬编码白名单**（第三方插件
-> 的设置默认会被 `settings-not-exposed` 拒绝，UI 里改了不生效）。
-> install.ps1 会自动 patch 该白名单（加入 `bash-terminal`，先备份原文件）。
-> **升级 DSH 后需重新运行 install.ps1** 恢复 patch。卸载时 install.ps1 会还原。
+> ⚠️ **不要在本项目里跑 `npm install`**：它会删掉上面第 2 步的 junction，转而给插件装一份**独立的**
+> `@deepseek-ai/*` 副本 —— 插件和宿主就不再共用模块实例，宿主升级后插件会停在旧 API 上
+> （本项目曾因此停在 0.1.0-rc.6）。只刷新 lock 时用 `npm install --package-lock-only`。
+
+> **兼容性**：要求 DSH ≥ **0.1.5-rc.1**。0.1.5 把浏览器模块表里的 `@deepseek-ai/dsh-client-runtime`
+> 改名为 `@deepseek-ai/dsh-client-store` 且只按精确裸名命中；旧 bundle 在新宿主上会报
+> `Failed to load plugins` / `require(...) missed the module table`。
+>
+> 另：0.1.5 的 Web 设置面改为 `settings.describe()` 动态枚举，**不再有 namespace 白名单**
+> （`settings-not-exposed` 已不存在），`install.ps1` 里的白名单 patch 只是历史遗留、可忽略。
 
 > 当前已不再需要手动改 profile 的 `cordis.patch.yml`：插件包内自带 `dsh.bundle.patch`（包内 `cordis.patch.yml`），只要 profile 的 `dsh.profile.bundles` 里有 `dsh-bash-terminal`，DSH 就会自动挂载。
 

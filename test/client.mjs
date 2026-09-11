@@ -16,7 +16,7 @@ function loadShared(name) {
   }
 }
 
-// --- mock defineStore (shape mirrors dsh-client-runtime: { spec, create }) ---
+// --- mock defineStore (shape mirrors dsh-client-store: { spec, create }) ---
 const mockDefineStore = (decl) => ({
   spec: decl,
   create: () => {
@@ -59,13 +59,17 @@ const ctx = {
 // --- load the built client bundle under a fake module loader ---
 const bundle = readFileSync(new URL("../lib/client.js", import.meta.url), "utf8");
 assert.ok(bundle.includes("window.__ModuleLoader__.load"), "bundle wrapped");
+// DSH >= 0.1.5 regression guard: the platform seed table spells the store
+// package @deepseek-ai/dsh-client-store; the retired runtime name would miss it.
+assert.ok(bundle.includes("@deepseek-ai/dsh-client-store"), "requests the seeded client store");
+assert.ok(!bundle.includes("dsh-client-runtime"), "does not request the retired client runtime");
 let exported;
 globalThis.window = {
   __ModuleLoader__: {
     load: ({ id, factory }) => {
       assert.strictEqual(id, "dsh-bash-terminal");
       exported = factory((name) => {
-        if (name === "@deepseek-ai/dsh-client-runtime/client") return { defineStore: mockDefineStore };
+        if (name === "@deepseek-ai/dsh-client-store") return { defineStore: mockDefineStore };
         if (name === "react/jsx-runtime" || name === "react" || name === "react-dom/server") return loadShared(name);
         if (name === "@deepseek-ai/dsh-client-ui-primitives") {
           const React = loadShared("react");

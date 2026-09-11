@@ -1,9 +1,15 @@
 // dsh-bash-terminal client plugin: a "Default terminal" preference row in the
 // Web UI General settings, mirroring the shipped EnterBehaviorRow grammar
 // (row layout, capsule selector with chevron, --dsw-* tokens).
+//
+// DSH >= 0.1.5: the browser module table (PLATFORM_MODULES) seeds react,
+// @deepseek-ai/cordis, @deepseek-ai/dsh-client-store, @deepseek-ai/dsh-client-ui-slots,
+// @deepseek-ai/dsh-client-ui-primitives and @deepseek-ai/dsh-client-ui-dockkit by
+// exact bare specifier. The old dsh-client-runtime name is gone from that table
+// (and so is its /client subpath), so this bundle requests dsh-client-store.
 
 import { useState } from "react";
-import { defineStore } from "@deepseek-ai/dsh-client-runtime/client";
+import { defineStore } from "@deepseek-ai/dsh-client-store";
 import { IconChevronDownOutline14, Menu } from "@deepseek-ai/dsh-client-ui-primitives";
 
 const SETTINGS_NS = "settings.bash-terminal";
