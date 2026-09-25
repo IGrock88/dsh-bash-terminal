@@ -1,5 +1,6 @@
 
 import { buildArgv, buildEnv, candidateGitBashPaths, candidatePwshPaths, internals } from "../lib/index.js";
+import { buildPtyEnv } from "../lib/terminal.js";
 const { renderResult, resolveAllPaths, validateArgs, toolDescription, SHELL_DESCRIPTIONS } = internals;
 import assert from "node:assert";
 
@@ -17,6 +18,27 @@ const wslEnv = buildEnv("wsl", { DSH_WEB_URL: "http://x", DSH_TEST: "1" });
 assert.ok(wslEnv.WSLENV.includes("DSH_WEB_URL"));
 assert.ok(wslEnv.WSLENV.includes("DSH_TEST"));
 assert.strictEqual(buildEnv("wsl", undefined).WSLENV, undefined);
+
+// ---- PTY environment: regression guard for Wsl/Service/0x8007072c -----------
+// node-pty REPLACES the child environment instead of layering it, so the DSH_*
+// overlay has to be materialized over process.env. Before this guard the PTY
+// received only the overlay plus four literals, and wsl.exe died under ConPTY
+// with Wsl/Service/0x8007072c because SystemRoot never reached it.
+
+process.env.DSH_PTY_ENV_PROBE = "from-process";
+const ptyEnv = buildPtyEnv({ DSH_WEB_URL: "http://x" });
+assert.strictEqual(ptyEnv.DSH_PTY_ENV_PROBE, "from-process", "the PTY environment inherits the process environment");
+assert.strictEqual(ptyEnv.DSH_WEB_URL, "http://x", "the shell-env overlay still reaches the PTY");
+assert.strictEqual(ptyEnv.NO_COLOR, "1");
+assert.strictEqual(ptyEnv.TERM, "dumb");
+assert.strictEqual(ptyEnv.PAGER, "cat");
+assert.strictEqual(ptyEnv.GIT_PAGER, "cat");
+assert.ok(Object.keys(ptyEnv).length > 10, "the PTY environment is a full environment, not just the overlay: " + Object.keys(ptyEnv).length + " keys");
+if (process.platform === "win32") {
+  assert.ok(ptyEnv.SystemRoot, "SystemRoot must reach the PTY - wsl.exe cannot start under ConPTY without it");
+}
+assert.strictEqual(buildPtyEnv({ DSH_PTY_ENV_PROBE: "from-overlay" }).DSH_PTY_ENV_PROBE, "from-overlay", "the overlay overrides a same-named process variable");
+delete process.env.DSH_PTY_ENV_PROBE;
 
 assert.strictEqual(renderResult({ stdout: { text: "hello", truncated: false }, stderr: { text: "", truncated: false }, exitCode: 0, signal: null, timedOut: false, timeoutMs: 1000 }), "hello");
 assert.ok(renderResult({ stdout: { text: "out", truncated: false }, stderr: { text: "err", truncated: false }, exitCode: 3, signal: null, timedOut: false, timeoutMs: 1000 }).includes("[stderr]"));

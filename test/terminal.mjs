@@ -153,15 +153,14 @@ if (wslOpened !== undefined) {
     await delay(1500);
     wslOut = await tool.execute({ action: "read", sessionId: wslOpened.sessionId }, exec);
   }
-  // Tolerate every observed WSL failure mode (no distro, ConPTY RPC errors,
-  // and the localhost-proxy "Wsl/Service/E_UNEXPECTED" crash) — environment
-  // limits skip; only a genuinely broken PTY path should fail.
+  // Tolerate genuine environment limits only: no distro, WSL not installed,
+  // and the localhost-proxy "Wsl/Service/E_UNEXPECTED" crash. ConPTY RPC
+  // failures are NOT tolerated any more - 0x8007072c was a real bug in the PTY
+  // environment (a missing SystemRoot), fixed in buildPtyEnv() and guarded by
+  // the regression assertions in test/unit.mjs.
   const wslFailed = wslOut.output.length === 0
-    || wslOut.output.includes("0x8007072c")
-    || wslOut.output.includes("RPC")
     || wslOut.output.includes("not installed")
-    || wslOut.output.includes("E_UNEXPECTED")
-    || wslOut.output.includes("Wsl/Service");
+    || wslOut.output.includes("E_UNEXPECTED");
   if (wslFailed) {
     console.log("NOTE: wsl.exe interactive unavailable in this environment (no distro / ConPTY RPC error); skipping assertion");
   } else {
