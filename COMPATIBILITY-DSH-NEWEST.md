@@ -79,3 +79,45 @@ dsh --profile web --dump-config | Select-String dsh-bash-terminal   # 组合树
 
 浏览器侧验证：刷新 `http://127.0.0.1:3080`，启动遮罩不再出现 `Failed to load plugins`，
 且 设置 → 通用 中「默认终端」行可读可写。
+
+
+---
+
+# DSH 0.2.x adaptation (2026-10-05)
+
+Supersedes the 0.1.5-rc.1 assessment above for the 0.2 line.
+
+## Verified against
+
+- `@deepseek-ai/dsh@0.2.0-rc.2`, installed from npm on Ubuntu (WSL2), Node 24.20.0.
+- Gate behaviour read from `packages/boot/app-boot/src/plugin-compatibility.ts`
+  (tag `dsh-v0.2.1-alpha.1`): only `peerDependencies` named `@deepseek-ai/dsh` or
+  `@deepseek-ai/dsh-*` are checked, with `semver.satisfies(runtime, range, { includePrerelease: true })`.
+  `engines.dsh` is **not** read; `dsh.manifestVersion` is not validated; a plugin
+  with no `peerDependencies` at all skips the check entirely. An incompatible
+  bundle is skipped at profile load (the profile still boots) and refused at
+  install time.
+
+## Removed APIs this plugin used
+
+| API | Where | 0.2 status |
+|---|---|---|
+| `SettingsProvider.register(ns, schema, { base })` | `lib/index.js` | removed — 0.2 exposes `configure`/`describe`/`update`/`replace`/`mutate` |
+| client `settingsScope` service | `lib/client.js`, `src/client.jsx` | removed in 0.1.7-rc.2 |
+
+## Replacement
+
+In 0.2 a plugin's config **is** its settings section: the profile row id is the
+namespace and the exported `Config` is the schema. Fields marked `.volatile()`
+are editable without remounting the plugin, and each volatile field arrives at
+`apply()` as a live ref exposing `.get()` — nested objects and array elements
+included. `lib/index.js` therefore reads `config.defaultShell` through
+`readDefaultShell()` on every use, which is also what keeps the
+`system-prompt/assemble` description refresh working.
+
+## Still required on 0.2.x
+
+- The `SystemRoot` PTY fix (0.3.15-patched.1). `ctx.shellEnv.collect()` is
+  unchanged in 0.2 and still returns only curated shell keys.
+- Windows only: `apply()` returns early when `process.platform !== "win32"`, so
+  this plugin cannot be exercised on Linux, including in a WSL staging bench.

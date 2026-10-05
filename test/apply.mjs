@@ -1,4 +1,4 @@
-import { apply, internals, SHELLS, DEFAULT_SHELL } from "../lib/index.js";
+import { apply, internals, SHELLS, DEFAULT_SHELL, Config } from "../lib/index.js";
 import assert from "node:assert";
 
 // ---- mock ctx for apply() ----
@@ -12,14 +12,6 @@ const ctx = {
   tools: { register: (tool) => { registered = tool; } },
   on: (event, handler) => { if (event === "system-prompt/assemble") assembleHandler = handler; },
   shellEnv: { collect: () => ({ DSH_WEB_URL: "http://127.0.0.1:3080" }) },
-  settings: {
-    register: (ns, schema, options) => {
-      assert.strictEqual(String(ns), "bash-terminal", "settings namespace");
-      assert.ok(schema, "settings schema provided");
-      assert.deepStrictEqual(options.base, { defaultShell: "powershell" }, "settings base");
-      return { get: () => ({ defaultShell: userDefaultShell }) };
-    }
-  },
   sandboxPolicy: {
     resolve: () => ({ mode: sandboxMode, workspaceRoot: "D:/WorkSpace", sessionId: "s1" })
   },
@@ -30,7 +22,10 @@ const ctx = {
   effect: () => () => {},
   subprocess: null
 };
-apply(ctx, {});
+// dsh 0.2.x: the plugin's own config IS its settings section, and a volatile
+// field arrives as a live ref with `.get()` — the mock mirrors that shape.
+const config = { defaultShell: { get: () => userDefaultShell } };
+apply(ctx, config);
 assert.ok(registered, "tool registered");
 assert.strictEqual(registered.name, "shell");
 assert.strictEqual(registered.parameters.properties.shell, undefined, "model-facing shell param removed");
@@ -161,9 +156,14 @@ assert.ok(spawnCalls.length >= 1, "background spawned");
 // invalid args throw
 await assert.rejects(() => registered.execute({ command: "", description: "t" }, exec));
 
-// settings schema rejects an out-of-enum user value
+// The Config enum is what rejects an out-of-enum value at the settings boundary.
+assert.throws(() => Config({ defaultShell: "fish" }), "Config rejects an out-of-enum shell");
+
+// At runtime a stale hand-edited value falls back instead of failing, because
+// prompt assembly must never break on it.
 userDefaultShell = "fish";
-await assert.rejects(() => registered.execute({ command: "x", description: "t" }, exec));
+const fishAssembly = await assembleHandler(makeAssembly(), {}, async () => makeAssembly());
+assert.ok(fishAssembly.tools[0].description.includes("pwsh -NoLogo"), "out-of-enum value falls back to the resolved default");
 
 // ---- system-prompt/assemble: description re-renders with the user's shell ----
 

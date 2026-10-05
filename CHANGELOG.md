@@ -1,5 +1,37 @@
 # Changelog
 
+## 0.4.0 (2026-10-05)
+
+- **Adapted to DSH 0.2.x.** `SettingsProvider.register()` was removed in 0.2
+  (the 0.2 provider exposes only `configure`/`describe`/`update`/`replace`/
+  `mutate`), so the plugin's `ctx.settings.register(...)` call threw on load and
+  the `shell` tool never registered. The plugin's own config is now its settings
+  section: the row id is the namespace, the exported `Config` is the schema, and
+  `defaultShell` is marked `.volatile()` so a change still re-renders the tool
+  description without a restart. `Config.defaultShell` keeps the three-value
+  enum, so an out-of-enum value is rejected at the settings boundary; a stale
+  hand-edited value falls back to the resolved default instead of failing prompt
+  assembly.
+- **A volatile field is a live ref in 0.2.x, not a value.** Every field marked
+  `.volatile()` reaches `apply()` as an object with `.get()`, so the plugin
+  unwraps it on each read (`readDefaultShell()`); reading it as a plain value
+  made `SHELLS.includes(...)` fail on the ref object and aborted `apply()`.
+- **The Web UI settings row is disabled.** Its client half binds the client
+  `settingsScope` service, removed in DSH 0.1.7-rc.2, and a client plugin that
+  fails to load takes the whole Web GUI plugin list down with it. `dsh.client`
+  and the `./client` export are therefore removed; the setting is edited through
+  the plugin's own settings section, and `src/client.jsx` stays in the tree for
+  a future port. Client-only peers (`dsh-client-store`, `dsh-client-locale`,
+  `dsh-client-ui-settings`, `dsh-client-ui-slots`, `dsh-client-ui-primitives`,
+  `react`) and `@deepseek-ai/dsh-settings` are dropped from `peerDependencies`.
+- `peerDependencies` widened to `>=0.1.5-rc.1 <0.3.0` for every
+  `@deepseek-ai/dsh-*` entry. DSH 0.2 refuses a plugin whose declared dsh peer
+  ranges do not match the running runtime (prereleases participate in the
+  match), so the previous `^0.1.5-rc.1` range excluded the whole 0.2 line.
+- The Windows PTY fix from 0.3.15-patched.1 is unchanged and still required: the
+  `shellEnv.collect()` seam is a curated shell set with no `SystemRoot`, and
+  `wsl.exe` under ConPTY dies with `Wsl/Service/0x8007072c` without it.
+
 ## 0.3.15 (2026-09-11)
 
 - **适配 DSH 0.1.5-rc.1**. 客户端模块表（`PLATFORM_MODULES`）把 `@deepseek-ai/dsh-client-runtime` 改名为 `@deepseek-ai/dsh-client-store`，并且只按**精确裸名**命中（没有 `/client` 子路径，也没有包工厂兜底）。客户端 bundle 原先 `require("@deepseek-ai/dsh-client-runtime/client")`，在 0.1.5 下必然 miss → Web GUI 启动报 `Failed to load plugins / require(...) missed the module table`。现改为 `@deepseek-ai/dsh-client-store`，bundle 的 4 个 require（`react`、`react/jsx-runtime`、`dsh-client-store`、`dsh-client-ui-primitives`）全部落在平台种子表内，不需要 `dsh.client.external`。
